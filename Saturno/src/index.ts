@@ -26,24 +26,39 @@ class Main {
     }
 
     router() {
-        this.server.get('', async (req: Request, res: Response) => {
+        this.server.get('/get/bd/users', async (req: Request, res: Response) => {
             const usersRepository = getCustomRepository(UsersRepository)
+            
             const users = await usersRepository.find()
 
-            if(users.length <= 0) throw new Error('Not exist users!')
+            if (users.length <= 0) throw new Error('Not exist users!')
 
             return res.status(200).json(users)
         })
-        
-        this.server.post('', async (req: Request, res: Response) => {
+
+        this.server.post('/post/bd/users', async (req: Request, res: Response) => {
             const usersRepository = getCustomRepository(UsersRepository)
+            // verificar se o usuario ja existe
+            const usersExist = await usersRepository.findOne({ email: req.body.email })
+            if (usersExist) throw new Error('User already exist!')
+
+            const user = usersRepository.create({
+                email: req.body.email,
+                name: req.body.name
+            })
+
+            await usersRepository.save(user)
+
+            return res.status(201).json({
+                message: 'User save of sucess',
+                user: user
+            })
         })
     }
 
     handleExceptionsRouters() {
         this.server.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-            if(err instanceof Error) return res.status(400).json(err.message)
-
+            if (err instanceof Error) return res.status(400).json(err.message)
             return res.status(500).json({ message: 'Internal server error!' })
         })
     }
