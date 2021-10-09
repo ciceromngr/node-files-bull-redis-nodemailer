@@ -14,8 +14,8 @@ class Cache {
         return asyncRedisGet ? JSON.parse(asyncRedisGet) : null
     }
 
-    set(key: string, value: string) {
-        return this.redis.set(key, Buffer.from(value))
+    set(key: string, value: any) {
+        return this.redis.set(key, Buffer.from(JSON.stringify(value)))
     }
 
     del(key: string) {
