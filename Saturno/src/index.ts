@@ -1,6 +1,8 @@
+import 'express-async-errors'
 import 'reflect-metadata'
 import './database'
-import express from 'express'
+import 'dotenv/config'
+import express, { NextFunction, Request, Response } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import faker from 'faker'
@@ -8,83 +10,118 @@ import axios from 'axios'
 import * as Yup from 'yup'
 import { getCustomRepository } from 'typeorm'
 import { UsersRepository } from './repository/UserRepository'
-const app = express()
-const port = process.env.EX_PORT || 5002
-app.use(express.json())
-app.use(cors())
-app.use(helmet())
 
-app.get('/get/bd/users', async (req, res) => {
-    console.time()
-    const userRepository = getCustomRepository(UsersRepository)
-    const users = await userRepository.find()
-    console.log(users.length)
-    console.timeEnd()
-    if (users.length <= 0) return res.status(400).json({ message: 'not exist users!' })
-    return res.status(200).json(users)
-})
+const port = process.env.PORT || 5002
 
-app.post('/post/bd/users', async (req, res) => {
-    const userRepository = getCustomRepository(UsersRepository)
+class Http {
 
-    const { name, email } = req.body
+    public server: any
 
-    const schema = Yup.object().shape({
-        name: Yup.string().required(),
-        email: Yup.string().required()
-    })
+    constructor() {
 
-    if (!(await schema.isValid({ name, email }))) return res.status(400).json({ message: 'Name or Email is required!' })
-
-    const usersAlready = await userRepository.findOne({ email })
-
-    if (usersAlready) return res.status(400).json({ message: 'Email already exist!' })
-
-    const users = userRepository.create({
-        name,
-        email
-    })
-
-    try {
-        // await axios.post('http://localhost:5001/send/cache/mail', users)
-    } catch (error) {
-        console.log('error: set redis users')
+        this.server = express()
+        this.middleware()
+        this.router()
+        this.exceptionRouters()
+        
     }
 
-    await userRepository.save(users)
+    middleware() {
 
+        this.server.use(express.json())
+        this.server.use(cors())
+        this.server.use(helmet())
 
-    return res.status(200).json(users)
-})
+    }
 
-app.get('/faker/user/:qtdUsers', async (req, res) => {
-    const userRepository = getCustomRepository(UsersRepository)
-    const { qtdUsers } = req.params
+    router() {
 
-    var usersAll = []
+        this.server.get('/get/bd/users', async (req: Request, res: Response) => {
 
-    if (!qtdUsers) return res.status(400).json({ message: 'Please put the number for next!' })
+            console.time()
+            const userRepository = getCustomRepository(UsersRepository)
+            const users = await userRepository.find()
+            console.timeEnd()
 
-    for (var i = 0; i < parseInt(qtdUsers); i++) {
-        const users = userRepository.create({
-            name: faker.name.firstName(),
-            email: faker.internet.email()
+            if (users.length <= 0) return res.status(400).json({ message: 'not exist users!' })
+            return res.status(200).json(users)
+
         })
 
-        usersAll.push(users)
+        this.server.post('/post/bd/users', async (req: Request, res: Response) => {
 
-        try {
-            // await axios.post('http://localhost:5001/send/cache/mail', users)
-            await axios.post('http://localhost:5001/set/cache/users', users)
-        } catch (error) {
-            console.log('error: set redis users')
-        }
+            const userRepository = getCustomRepository(UsersRepository)
 
-        await userRepository.save(users)
+            const { name, email } = req.body
+
+            const schema = Yup.object().shape({
+                name: Yup.string().required(),
+                email: Yup.string().required()
+            })
+
+            if (!(await schema.isValid({ name, email }))) return res.status(400).json({ message: 'Name or Email is required!' })
+
+            const usersAlready = await userRepository.findOne({ email })
+
+            if (usersAlready) return res.status(400).json({ message: 'Email already exist!' })
+
+            const users = userRepository.create({
+                name,
+                email
+            })
+
+            try {
+                // no caso de usar o faker users comentar a linha de baixo! para que nao fique mandando email na fila
+                await axios.post('http://localhost:5001/send/cache/mail', users)
+            } catch (error) {
+                throw new Error('Error to send email!')
+            }
+
+            await userRepository.save(users)
+
+            return res.status(200).json(users)
+
+        })
+
+        this.server.get('/faker/user/:qtdUsers', async (req: Request, res: Response) => {
+
+            const { qtdUsers } = req.params
+
+            var usersAll = []
+
+            if (!qtdUsers) return res.status(400).json({ message: 'Please put the number for next!' })
+
+            for (var i = 0; i < parseInt(qtdUsers); i++) {
+                const users = {
+                    name: faker.name.firstName(),
+                    email: faker.internet.email()
+                }
+
+                usersAll.push(users)
+
+                try {
+                    await axios.post('http://localhost:5001/set/cache/users', users)
+                } catch (error) {
+                    throw new Error('Error to set user cache')
+                }
+            }
+
+            return res.status(200).json({
+                message: `created faker users ${qtdUsers}`
+            })
+
+        })
 
     }
+    exceptionRouters() {
 
-    return res.status(200).json(usersAll)
-})
+        this.server.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+            if (err instanceof Error) return res.status(400).json(err.message)
 
-app.listen(port, () => console.log(`Server Jupter running on port:${port}`))
+            return res.status(500).json({ err: 'Internal server error' })
+        })
+
+    }
+}
+
+new Http().server.listen(port, () => console.log(`Server Jupter running on port:${port}`))
